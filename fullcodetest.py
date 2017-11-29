@@ -139,9 +139,10 @@ def findNextSuspect():
 
             while suspectImage is None:
 
-                rawCapture.truncate(0)
+                
                 cam.capture(rawCapture, format="bgr")
                 suspectImage, (x,y,w,h) = detectFace(rawCapture.array)
+                rawCapture.truncate(0)
 
             print('Saved face for predicting')
 
@@ -172,7 +173,8 @@ def scanSuspects(numPlayers):
         # Start moving robot
         forwardbuf = bytes([ord('f')])
         retlen, retdata = wiringpi.wiringPiSPIDataRW(0, forwardbuf)
-        
+
+        print('moving to next suspect')
         # Wait to avoid finding same suspect
         time.sleep(4)
 
