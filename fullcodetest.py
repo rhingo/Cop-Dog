@@ -52,7 +52,7 @@ def detectFace(img):
     
     return detectedFace, (x, y, w, h)
 
-def getLocation()
+def getLocation():
     sensorDist = 0
     #gets the distance from the ultrasonic sensor
     return sensorDist
@@ -127,16 +127,25 @@ def findNextSuspect():
             stopbuf = bytes([ord('s')])
             retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
 
+            print('Face Centered!')
+            
             # Wait to stabilize
-            time.sleep(2)
+            time.sleep(0.5)
 
             #Get distance
-            suspectLoc = getdistance()
+            suspectLoc = getLocation()
 
-            cam.capture(rawCapture, format="bgr")
-            suspectImage = rawCapture.array
+            suspectImage = None
 
-            rawCapture.truncate(0)
+            while suspectImage is None:
+
+                rawCapture.truncate(0)
+                cam.capture(rawCapture, format="bgr")
+                suspectImage, (x,y,w,h) = detectFace(rawCapture.array)
+
+            print('Saved face for predicting')
+
+            
             return suspectImage, suspectLoc
  
         # If the `q` key was pressed, break from the loop
@@ -165,7 +174,7 @@ def scanSuspects(numPlayers):
         retlen, retdata = wiringpi.wiringPiSPIDataRW(0, forwardbuf)
         
         # Wait to avoid finding same suspect
-        time.sleep(8)
+        time.sleep(4)
 
     return testData, locationData
         
@@ -185,22 +194,28 @@ def predictCriminal(testData, recognizer, criminal):
         predictions.append(predictedLabel)
         confidences.append(confidence)
 
+    print('Predictions Made')
+    
     suspectedCriminals = [i for i,prediction in enumerate(predictions) if predictions[i] == criminal]
 
+    print('Suspected Criminals found!')
+
     if len(suspectedCriminals) == 1:
-        predictedCriminal = suspectedCriminal[0]
+        predictedCriminal = suspectedCriminals[0]
+        print('Criminal Found!')
     elif len(suspectedCriminals) > 1:
+        print('More than one criminal found, picking highest confidence')
         highestConfidence = max([confidences[i] for i in range(len(suspectedCriminals))])
         predictedCriminal = confidences.index(highestConfidence)
     else:
         print('Could not find criminal')
         predictedCriminal = None
 
-    print ('Predicted Criminal is Suspect {}'.format(predictedCriminal))
+    print ('Predicted Criminal is Suspect {}'.format(predictedCriminal + 1))
     return predictedCriminal
 
 
-def moveToCriminal(predictedCriminal, locationData)
+def moveToCriminal(predictedCriminal, locationData):
     # Start moving robot backwards
     backbuf = bytes([ord('b')])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, backbuf)
@@ -209,7 +224,7 @@ def moveToCriminal(predictedCriminal, locationData)
 
     criminalLoc = locationData[predictedCriminal]
 
-    while currentLoc < criminalLoc
+    while currentLoc < criminalLoc:
         #keep moving
         time.sleep(1)
         currentLoc = getLocation()
@@ -237,7 +252,7 @@ def main():
         cam.vflip = True
 
         # Initialize recognizer
-        #recognizer = cv2.face.createEigenFaceRecognizer()
+        recognizer = cv2.face.createEigenFaceRecognizer()
 
         # Initialize SPI
         wiringpi.wiringPiSPISetup(0, 500000)
@@ -255,26 +270,33 @@ def main():
 
         # Train model
         print('Training...')
-        # recognizer.train(faces, np.array(labels)) #expects numpy array, not list
+        recognizer.train(faces, np.array(labels)) #expects numpy array, not list
 
         # Select criminal
         input('Now everyone get in line!') # Waits for input so everyone can be ready
         criminal = randint(1, numPlayers) #Select Criminal
         crimstr = 'The Criminal is Suspect #' + str(criminal)
+        print(crimstr)
 
         # Scan suspects
         testData, locationData = scanSuspects(numPlayers)
+        # Stop moving robot
+        stopbuf = bytes([ord('s')])
+        retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
+
+        print('here')
 
         # Predict criminal
-        #predictedCriminal = predictCriminal(testData, recognizer, criminal)
+        predictedCriminal = predictCriminal(testData, recognizer, criminal)
 
         if predictedCriminal is not None:
             moveToCriminal(predictedCriminal, locationData)
 
         return()
         
-    except KeyboardInterrupt:
+    except Exception as e:
         print('Breaking!')
+        print(e)
         stopbuf = bytes([ord('s')])
         retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
         cv2.destroyAllWindows()
