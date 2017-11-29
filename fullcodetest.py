@@ -52,6 +52,11 @@ def detectFace(img):
     
     return detectedFace, (x, y, w, h)
 
+def getLocation()
+    sensorDist = 0
+    #gets the distance from the ultrasonic sensor
+    return sensorDist
+
 
 def takeMugshots():
     numPhotos = 3
@@ -125,11 +130,14 @@ def findNextSuspect():
             # Wait to stabilize
             time.sleep(2)
 
+            #Get distance
+            suspectLoc = getdistance()
+
             cam.capture(rawCapture, format="bgr")
             suspectImage = rawCapture.array
 
             rawCapture.truncate(0)
-            return suspectImage
+            return suspectImage, suspectLoc
  
         # If the `q` key was pressed, break from the loop
         if key == ord("q"):
@@ -139,6 +147,7 @@ def findNextSuspect():
 def scanSuspects(numPlayers):
     # Initialize test data
     testData = []
+    locationData = []
 
     # Start moving robot
     forwardbuf = bytes([ord('f')])
@@ -146,8 +155,9 @@ def scanSuspects(numPlayers):
     
     suspectsFound = 0
     while suspectsFound < numPlayers:
-        suspectImage = findNextSuspect()
+        suspectImage, suspectLoc = findNextSuspect()
         testData.append(suspectImage)
+        locationData.append(suspectLoc)
         suspectsFound += 1
 
         # Start moving robot
@@ -155,15 +165,15 @@ def scanSuspects(numPlayers):
         retlen, retdata = wiringpi.wiringPiSPIDataRW(0, forwardbuf)
         
         # Wait to avoid finding same suspect
-        time.sleep(10)
+        time.sleep(8)
 
-    return testData
+    return testData, locationData
         
 
 def checkFaceCentered(xface, wface, w):
     threshold = 30
     xcenter = xface + wface//2
-    return ((xcenter < (w//2 + 30)) and (xcenter > (w//2 - 30)))
+    return ((xcenter < (w//2 + threshold)) and (xcenter > (w//2 - threshold)))
 
 
 def predictCriminal(testData, recognizer, criminal):
@@ -189,7 +199,34 @@ def predictCriminal(testData, recognizer, criminal):
     print ('Predicted Criminal is Suspect {}'.format(predictedCriminal))
     return predictedCriminal
 
-    
+
+def moveToCriminal(predictedCriminal, locationData)
+    # Start moving robot backwards
+    backbuf = bytes([ord('b')])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, backbuf)
+
+    currentLoc = getLocation()
+
+    criminalLoc = locationData[predictedCriminal]
+
+    while currentLoc < criminalLoc
+        #keep moving
+        time.sleep(1)
+        currentLoc = getLocation()
+
+    #now stop and bark
+    stopbuf = bytes([ord('s')])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
+
+    #Initializing music
+    pygame.init()
+    pygame.mixer.music.load('bark.mp3')
+
+    #Playing music
+    pygame.mixer.music.play()
+    while pygame.mixer.music.get_busy() == True:
+        continue
+    return()
 
 """ Main function """
 def main():
@@ -217,6 +254,7 @@ def main():
         faces, labels = getTrainingData(numPlayers)
 
         # Train model
+        print('Training...')
         # recognizer.train(faces, np.array(labels)) #expects numpy array, not list
 
         # Select criminal
@@ -225,10 +263,15 @@ def main():
         crimstr = 'The Criminal is Suspect #' + str(criminal)
 
         # Scan suspects
-        testData = scanSuspects(numPlayers)
+        testData, locationData = scanSuspects(numPlayers)
 
         # Predict criminal
         #predictedCriminal = predictCriminal(testData, recognizer, criminal)
+
+        if predictedCriminal is not None:
+            moveToCriminal(predictedCriminal, locationData)
+
+        return()
         
     except KeyboardInterrupt:
         print('Breaking!')
