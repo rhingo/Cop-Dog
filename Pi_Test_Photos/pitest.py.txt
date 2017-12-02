@@ -1,0 +1,113 @@
+import numpy as np
+import cv2
+
+faceCascade = cv2.CascadeClassifier('C:\\Users\\Julia\\Documents\\GitHub\\opencv\\data\\haarcascades\\haarcascade_frontalface_alt.xml')
+
+faceCascade2 = cv2.CascadeClassifier('C:\\Users\\Julia\\Documents\\GitHub\\opencv\\data\\haarcascades\\haarcascade_frontalface_default.xml')
+
+numcorrect = 0
+numnodetect = 0
+numtoomanydetect = 0
+numfixed = 0
+
+people = ['Amanda', 'Andrew W', 'Josh', 'Julia']
+
+
+for name in people:
+	for i in range(1,11):
+		string = name + str(i) + '.jpg'
+
+		img = cv2.imread(string)
+
+		height, width = img.shape[:2]
+	
+		img = cv2.resize(img,(width//2, height//2), interpolation = cv2.INTER_AREA)
+
+		img = img[75:425, 225:475]
+
+		gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+		faces = faceCascade.detectMultiScale(gray)
+
+		print(name, i, len(faces))
+
+		if len(faces) != 0:
+			if len(faces) == 1:
+				for x,y,w,h in faces:
+					cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
+					roi_gray = gray[y:y+h, x:x+w]
+					roi_color = img[y:y+h, x:x+w]
+
+				numcorrect = numcorrect + 1	
+			
+				#cv2.imshow('img',img)
+				#cv2.waitKey(0)
+				#cv2.destroyAllWindows()		
+								
+			else:
+				facecheck = faceCascade2.detectMultiScale(gray)
+		
+				if len(facecheck) == 1:
+					print('Second check correct')
+			
+					for x,y,w,h, in facecheck:
+						cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
+						roi_gray = gray[y:y+h, x:x+w]
+						roi_color = img[y:y+h, x:x+w]
+
+					numcorrect = numcorrect + 1
+
+					numfixed = numfixed + 1;	
+			
+					#cv2.imshow('img',img)
+					#cv2.waitKey(0)
+					#cv2.destroyAllWindows()
+			
+				else:
+					numtoomanydetect = numtoomanydetect + 1;
+					print('too many faces detected')
+			
+					#cv2.imshow('img',img)
+					#cv2.waitKey(0)
+					#cv2.destroyAllWindows()
+			
+		else:
+			facecheck = faceCascade2.detectMultiScale(gray)
+		
+			if len(facecheck) == 1:
+				print('Second check correct')
+			
+				for x,y,w,h, in facecheck:
+					cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
+					roi_gray = gray[y:y+h, x:x+w]
+					roi_color = img[y:y+h, x:x+w]
+
+				numcorrect = numcorrect + 1
+
+				numfixed = numfixed + 1;	
+			
+				#cv2.imshow('img',img)
+				#cv2.waitKey(0)
+				#cv2.destroyAllWindows()
+			else: 
+				numnodetect = numnodetect + 1;
+				print('no faces detected')
+		
+				#cv2.imshow('img',img)
+				#cv2.waitKey(0)
+				#cv2.destroyAllWindows()
+
+print('Number of No Detections:')
+print(numnodetect)
+
+print('Number of Too Many Detections:')
+print(numtoomanydetect)
+
+print('Number of Fixed Detections with Second Classifier')
+print(numfixed)
+
+percent = numcorrect/40
+print('Number of Correct Detections:')
+print(numcorrect)
+print('% Correct')
+print(percent)
