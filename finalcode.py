@@ -27,7 +27,41 @@ playerIDName = {}
 recognizer = cv2.face.createLBPHFaceRecognizer()
 
 
-def predictSuspect():
+
+"""
+Define Robot Control State Machine
+
+States:
+
+1: robotForward
+2: robotBackward
+3: robotStop
+4: robotRecord
+5: robotSeek
+"""
+def robotForward():
+    forwardbuf = bytes([1,0])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, forwardbuf)
+    
+def robotBackward():
+    backbuf = bytes([2,0])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, backbuf)
+
+def robotStop():
+    stopbuf = bytes([3,0])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
+    
+def robotRecord(playerID):
+    recordbuf = bytes([4,playerID,0])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, recordbuf)
+
+def robotSeek(criminal):
+    seekbuf = bytes([5,criminalID,0])
+    retlen, retdata = wiringpi.wiringPiSPIDataRW(0, seekbuf)
+    
+
+
+def predictSuspect(suspectID):
     # Initialize camera
     cam = cv2.VideoCapture(0)
 
@@ -82,6 +116,12 @@ def predictSuspect():
             
             face_centered = checkFaceCentered(x,w,wImg)
             if face_centered:
+                # Stop when face is centered for the first time
+                if numImages == 0:
+                    robotStop()
+                    robotRecord(suspectID)
+
+                # Make prediction
                 prediction,confidence = recognizer.predict(face)
                 predictions.append(prediction)
                 confidences.append(confidence)
@@ -108,7 +148,6 @@ def predictSuspect():
     return predictedPlayer, meanConfidence
 
 
-
 def checkFaceCentered(xface, wface, w):
     threshold = 30
     xcenter = xface + wface//2
@@ -117,12 +156,22 @@ def checkFaceCentered(xface, wface, w):
 
 def scanSuspects(numPlayers):
     predictions = []
+    
     for suspectID in range(1,numPlayers+1):
-        prediction, meanConfidence = predictSuspect()
+        # Start moving robot
+        robotForward()
+        
+        prediction, meanConfidence = predictSuspect(suspectID)
         predictions.append(prediction)
         print("\nFinal Prediction: {}, Final Confidence: {}".format(playerIDName[prediction],meanConfidence))
 
+        time.sleep(2)
+
+    # Make sure robot stopped
+    robotStop()
+
     return predictions
+
 
 """
 Given an image, try to extract the face region of the image using
@@ -267,8 +316,7 @@ def main():
         wiringpi.wiringPiSPISetup(0, 500000)
 
         # Initialize to a stop
-        stopbuf = bytes([ord('s')])
-        retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
+        robotStop()
 
         # Get number of players
         numPlayers = input('How many people are playing? ')
