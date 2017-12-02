@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 
+
+
 def getTrainingData(people):
     facePhotos = 0
     faces = []
