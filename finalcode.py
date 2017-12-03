@@ -27,7 +27,6 @@ playerIDName = {}
 recognizer = cv2.face.createLBPHFaceRecognizer()
 
 
-
 """
 Define Robot Control State Machine
 
@@ -55,7 +54,7 @@ def robotRecord(playerID):
     recordbuf = bytes([4,playerID,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, recordbuf)
 
-def robotSeek(criminal):
+def robotSeek(criminalID):
     seekbuf = bytes([5,criminalID,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, seekbuf)
     
@@ -67,9 +66,9 @@ def predictSuspect(suspectID):
 
     # Initialize detector
     detector = cv2.CascadeClassifier('/home/pi/Downloads/opencv/data/'
-                                     'haarcascades/haarcascade_frontalface_default.xml')
+                                     'haarcascades/haarcascade_frontalface_alt.xml')
     detector2 = cv2.CascadeClassifier('/home/pi/Downloads/opencv/data/'
-                                         'haarcascades/haarcascade_frontalface_alt.xml')
+                                         'haarcascades/haarcascade_frontalface_default.xml')
     # Found face in previous frame
     prevFrameFace = False
 
@@ -107,9 +106,10 @@ def predictSuspect(suspectID):
         # If it still didn't work, no face
         if len(faces) == 0:
             prevFrameFace = False
-            
+
+        printString = ""
         for (x,y,w,h) in faces:
-            cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2)
+            cv2.rectangle(img,(x,y),(x+w,y+h),(0,0,255),2)
             face = cv2.resize(gray[y:y+h, x:x+w], (150, 150))
             prevFrameFace = True
             ROI = w
@@ -126,8 +126,10 @@ def predictSuspect(suspectID):
                 predictions.append(prediction)
                 confidences.append(confidence)
                 print("Prediction: {}, Confidence: {}".format(playerIDName[prediction],confidence))
+                printString = '{} - {}'.format(playerIDName[prediction],confidence)
                 numImages += 1
 
+        cv2.putText(img,printString, (int(x+w*3/4),int(y-10)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255))
         cv2.imshow('frame',img)
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -156,21 +158,24 @@ def checkFaceCentered(xface, wface, w):
 
 def scanSuspects(numPlayers):
     predictions = []
+    confidences = []
     
     for suspectID in range(1,numPlayers+1):
         # Start moving robot
         robotForward()
+
+        if suspectID > 1:
+            time.sleep(4)
         
         prediction, meanConfidence = predictSuspect(suspectID)
         predictions.append(prediction)
+        confidences.append(meanConfidence)
         print("\nFinal Prediction: {}, Final Confidence: {}".format(playerIDName[prediction],meanConfidence))
-
-        time.sleep(2)
 
     # Make sure robot stopped
     robotStop()
 
-    return predictions
+    return predictions, confidences
 
 
 """
@@ -200,7 +205,7 @@ def getFace(img):
             
     # Try again with different classifier
     if len(faces) != 1:
-        faces = detector2.detectMultiScale(grayImg, 1.3, 3)
+        faces = detector2.detectMultiScale(grayImg, 1.3, 3, 0, minSize, maxSize)
 
     # If it still didn't work, quit
     if len(faces) != 1:
@@ -282,6 +287,19 @@ def getTrainingData(numPlayers):
     return faces,labels
 
 
+def bark():
+    time.sleep(2) #Gives robot time to reach final location
+    
+    #Initializing music
+    pygame.init()
+    pygame.mixer.music.load('bark.mp3')
+
+    #Playing music
+    pygame.mixer.music.play()
+    while pygame.mixer.music.get_busy() == True:
+        continue
+
+
 """
 Initializes each player to have a name associated with their ID
 
@@ -292,6 +310,7 @@ def getPlayerNames(numPlayers):
     for playerID in range(1,numPlayers+1):
         playerName = input("What is Player {}'s name: ".format(playerID))
         playerIDName[playerID] = playerName
+    
 
 
 """
@@ -307,6 +326,23 @@ def selectCriminal(numPlayers):
     print('The Criminal is ' + str(playerIDName[criminal]))
 
     return criminal
+
+
+
+def locateCriminal(predictions, confidences, criminal):
+    
+    potentialCriminals = [i for i in range(len(predictions)) if predictions[i] == criminal]
+
+    numCrim = len(potentialCriminals)
+
+    if numCrim == 0:
+        print('No Criminal Located')
+    else:
+        criminalConfidence= min([confidences[i] for i in potentialCriminals])
+        criminalIdx = confidences.index(criminalConfidence)
+        robotSeek(criminalIdx+1)
+        print(criminalIdx+1)
+        bark()
 
 
 """ Main function """
@@ -336,7 +372,10 @@ def main():
         criminal = selectCriminal(numPlayers)
 
         # Scan suspects and Predict
-        predictions = scanSuspects(numPlayers)
+        predictions, confidences = scanSuspects(numPlayers)
+
+        # Move to Criminal Location
+        locateCriminal(predictions, confidences, criminal)
     
     except Exception as e:
         print('Breaking!')
@@ -344,7 +383,6 @@ def main():
         stopbuf = bytes([ord('s')])
         retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
         cv2.destroyAllWindows()
-        return()
     
 if __name__ == "__main__":
     main()
