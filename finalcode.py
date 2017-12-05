@@ -212,7 +212,8 @@ def predictSuspect(suspectID, criminal):
                 numImages += 1
 
                 cv2.putText(img,printString, (int(x+w*3/4),int(y-10)), cv2.FONT_HERSHEY_SIMPLEX, 1, color)
-                cv2.imshow('frame',img)
+        cv2.imshow('frame',img)
+        cv2.moveWindow('frame', 0, 0) 
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -233,7 +234,7 @@ def predictSuspect(suspectID, criminal):
 
 
 def checkFaceCentered(xface, wface, w):
-    threshold = 30
+    threshold = 60
     xcenter = xface + wface//2
     return ((xcenter < (w//2 + threshold)) and (xcenter > (w//2 - threshold)))
 
@@ -328,6 +329,7 @@ def takeMugshots():
             images.append(img)
 
             cv2.imshow('frame',img)
+            cv2.moveWindow('frame', 0, 0) 
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         cv2.destroyAllWindows()
@@ -373,7 +375,7 @@ def bark():
     #Initializing music
     print('bork')
     pygame.init()
-    pygame.mixer.music.load('bark.mp3')
+    pygame.mixer.music.load('bark.wav')
 
     #Playing music
     pygame.mixer.music.play()
@@ -423,8 +425,10 @@ def locateCriminal(numPlayers, predictions, confidences, criminal):
         criminalIdx = confidences.index(criminalConfidence)
         robotSeek(numPlayers, criminalIdx+1)
         time.sleep(.25)
-        if GPIO.input(11):
-            bark()
+        while True:
+            if GPIO.input(11):
+                bark()
+                break
         print('The criminal is in location ' + str(criminalIdx+1))
 
 
