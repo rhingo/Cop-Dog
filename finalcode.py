@@ -9,6 +9,7 @@ Team Members: Rahul Hingorani
 Project Description: 
 """
 
+
 # Import modules
 import numpy as np
 import cv2
@@ -18,7 +19,7 @@ from random import randint
 import wiringpi
 import io
 import traceback
-
+import RPi.GPIO as GPIO
 
 # Initialize global dictionary to hold player_id:player_name pairs
 playerIDName = {}
@@ -26,6 +27,11 @@ playerIDName = {}
 # Initialize recognizer
 recognizer = cv2.face.createLBPHFaceRecognizer()
 
+# Set up GPIO
+#follow board numbering system for pins
+GPIO.setmode(GPIO.BOARD)
+#set as input and pull down
+GPIO.setup(11, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 """
 Define Robot Control State Machine
@@ -39,28 +45,97 @@ States:
 5: robotSeek
 """
 def robotForward():
-    forwardbuf = bytes([1,0])
+    forwardbuf = bytes([1,1,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, forwardbuf)
     
 def robotBackward():
-    backbuf = bytes([2,0])
+    backbuf = bytes([2,2,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, backbuf)
 
 def robotStop():
-    stopbuf = bytes([3,0])
+    stopbuf = bytes([3,3,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
     
 def robotRecord(playerID):
     recordbuf = bytes([4,playerID,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, recordbuf)
 
-def robotSeek(criminalID):
+def robotSeek(numPlayers, criminalID):
     seekbuf = bytes([5,criminalID,0])
     retlen, retdata = wiringpi.wiringPiSPIDataRW(0, seekbuf)
+
+def robotSeekOther(numPlayers, criminalID):
+    print('ENTERED')
+    
+    # Start backwards movement
+    robotBackward()
+    time.sleep(0.05)
+    
+    cam = cv2.VideoCapture(0)
+
+    # Initialize detector
+    detector = cv2.CascadeClassifier('/home/pi/Downloads/opencv/data/'
+                                     'haarcascades/haarcascade_frontalface_alt.xml')
+    detector2 = cv2.CascadeClassifier('/home/pi/Downloads/opencv/data/'
+                                         'haarcascades/haarcascade_frontalface_default.xml')
+
+    # Found face in previous frame
+    prevFrameFace = False
+
+    # Record ROI
+    ROI = -1
+
+    suspectID = numPlayers
+    foundFace = False
+    while suspectID >= criminalID: 
+        # Get frame
+        ret,img = cam.read()
+
+        # Convert to gray scale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Decision #1: Check if previous frame had a face
+        if prevFrameFace:
+            # Detect faces sized +/-20% off biggest face in previous search
+            minSize = (int(ROI*8/10), int(ROI*8/10))
+            maxSize = (int(ROI*12/10), int(ROI*12/10))
+        else:
+            # Minimum face size is 1/5th of screen width
+            # Maximum face size is 2/3rds of screen width
+            hImg, wImg = gray.shape[:2]
+            minSize = (int(hImg/5),int(hImg/5))
+            maxSize = (int(hImg*2/3),int(hImg*2/3))
+            
+        faces = detector.detectMultiScale(gray, 1.3, 3, 0, minSize, maxSize)
+
+        # If no face found, try different classifier
+        if len(faces) == 0:
+            faces = detector2.detectMultiScale(gray, 1.3, 3, 0, minSize, maxSize)
+
+        # If it still didn't work, no face
+        if len(faces) == 0:
+            prevFrameFace = False
+
+        for (x,y,w,h) in faces:
+            cv2.rectangle(img,(x,y),(x+w,y+h),(0,0,255),2)
+            prevFrameFace = True
+            ROI = w
+            
+            face_centered = checkFaceCentered(x,w,wImg)
+            if face_centered:
+                foundFace = True
+
+        if foundFace: 
+            suspectID -= 1
+            foundFace = False
+
+        time.sleep(4)
+
+    # Stop when criminal is found
+    robotStop()
     
 
-
-def predictSuspect(suspectID):
+def predictSuspect(suspectID, criminal):
     # Initialize camera
     cam = cv2.VideoCapture(0)
 
@@ -78,7 +153,7 @@ def predictSuspect(suspectID):
     numImages = 0
     predictions = []
     confidences = []
-    while numImages <= 200: 
+    while numImages <= 100: 
         # Get frame
         ret,img = cam.read()
 
@@ -109,7 +184,7 @@ def predictSuspect(suspectID):
 
         printString = ""
         for (x,y,w,h) in faces:
-            cv2.rectangle(img,(x,y),(x+w,y+h),(0,0,255),2)
+            cv2.rectangle(img,(x,y),(x+w,y+h),(0,255,0),4)
             face = cv2.resize(gray[y:y+h, x:x+w], (150, 150))
             prevFrameFace = True
             ROI = w
@@ -119,18 +194,25 @@ def predictSuspect(suspectID):
                 # Stop when face is centered for the first time
                 if numImages == 0:
                     robotStop()
+                    time.sleep(0.1)
                     robotRecord(suspectID)
 
                 # Make prediction
                 prediction,confidence = recognizer.predict(face)
                 predictions.append(prediction)
                 confidences.append(confidence)
+                if prediction == criminal:
+                    color = (0,0,255)
+                    for (x,y,w,h) in faces:
+                        cv2.rectangle(img,(x,y),(x+w,y+h),(0,0,255),4)
+                else:
+                    color = (0,255,0)
                 print("Prediction: {}, Confidence: {}".format(playerIDName[prediction],confidence))
                 printString = '{} - {}'.format(playerIDName[prediction],confidence)
                 numImages += 1
 
-        cv2.putText(img,printString, (int(x+w*3/4),int(y-10)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255))
-        cv2.imshow('frame',img)
+                cv2.putText(img,printString, (int(x+w*3/4),int(y-10)), cv2.FONT_HERSHEY_SIMPLEX, 1, color)
+                cv2.imshow('frame',img)
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -156,7 +238,7 @@ def checkFaceCentered(xface, wface, w):
     return ((xcenter < (w//2 + threshold)) and (xcenter > (w//2 - threshold)))
 
 
-def scanSuspects(numPlayers):
+def scanSuspects(numPlayers, criminal):
     predictions = []
     confidences = []
     
@@ -167,13 +249,13 @@ def scanSuspects(numPlayers):
         if suspectID > 1:
             time.sleep(4)
         
-        prediction, meanConfidence = predictSuspect(suspectID)
+        prediction, meanConfidence = predictSuspect(suspectID, criminal)
         predictions.append(prediction)
         confidences.append(meanConfidence)
         print("\nFinal Prediction: {}, Final Confidence: {}".format(playerIDName[prediction],meanConfidence))
 
     # Make sure robot stopped
-    robotStop()
+    #robotStop()
 
     return predictions, confidences
 
@@ -288,9 +370,8 @@ def getTrainingData(numPlayers):
 
 
 def bark():
-    time.sleep(2) #Gives robot time to reach final location
-    
     #Initializing music
+    print('bork')
     pygame.init()
     pygame.mixer.music.load('bark.mp3')
 
@@ -329,7 +410,7 @@ def selectCriminal(numPlayers):
 
 
 
-def locateCriminal(predictions, confidences, criminal):
+def locateCriminal(numPlayers, predictions, confidences, criminal):
     
     potentialCriminals = [i for i in range(len(predictions)) if predictions[i] == criminal]
 
@@ -340,9 +421,12 @@ def locateCriminal(predictions, confidences, criminal):
     else:
         criminalConfidence= min([confidences[i] for i in potentialCriminals])
         criminalIdx = confidences.index(criminalConfidence)
-        robotSeek(criminalIdx+1)
-        print(criminalIdx+1)
-        bark()
+        robotSeek(numPlayers, criminalIdx+1)
+        time.sleep(.25)
+        if GPIO.input(11):
+            bark()
+        print('The criminal is in location ' + str(criminalIdx+1))
+
 
 
 """ Main function """
@@ -372,17 +456,19 @@ def main():
         criminal = selectCriminal(numPlayers)
 
         # Scan suspects and Predict
-        predictions, confidences = scanSuspects(numPlayers)
+        predictions, confidences = scanSuspects(numPlayers, criminal)
 
         # Move to Criminal Location
-        locateCriminal(predictions, confidences, criminal)
+        locateCriminal(numPlayers, predictions, confidences, criminal)
+
+        GPIO.cleanup()
     
     except Exception as e:
         print('Breaking!')
         print(traceback.format_exc())
-        stopbuf = bytes([ord('s')])
-        retlen, retdata = wiringpi.wiringPiSPIDataRW(0, stopbuf)
+        robotStop()
         cv2.destroyAllWindows()
+        GPIO.cleanup()
     
 if __name__ == "__main__":
     main()
